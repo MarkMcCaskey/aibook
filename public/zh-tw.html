@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>遺留之物</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #f5f0e8;
+      color: #2c2c2c;
+      font-family: 'Noto Serif TC', 'Songti TC', 'PMingLiU', Georgia, serif;
+      font-size: 19px;
+      line-height: 2.0;
+      min-height: 100vh;
+    }
+
+    /* Webcam - hidden, used by MediaPipe */
+    #webcam {
+      position: fixed;
+      top: 0; left: 0;
+      width: 1px; height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* The Book */
+    #book {
+      max-width: 38em;
+      margin: 0 auto;
+      padding: 4rem 2rem 12rem;
+    }
+
+    #book h1 {
+      font-size: 2.2rem;
+      font-weight: normal;
+      letter-spacing: 0.02em;
+      margin-bottom: 0.5rem;
+      color: #1a1a1a;
+    }
+
+    #book .subtitle {
+      font-size: 0.95rem;
+      color: #888;
+      font-style: italic;
+      margin-bottom: 3rem;
+      letter-spacing: 0.03em;
+    }
+
+    .paragraph {
+      margin-bottom: 1.6em;
+      transition: opacity 0.4s ease, color 0.4s ease;
+      position: relative;
+    }
+
+    .paragraph.frozen {
+      color: #2c2c2c;
+    }
+
+    .paragraph.current {
+      color: #1a1a1a;
+    }
+
+    .paragraph.mutable {
+      color: #3a3a3a;
+    }
+
+    /* Invisible mode: cross-fade */
+    .paragraph.fading-out {
+      opacity: 0;
+      transition: opacity 0.35s ease;
+    }
+
+    .paragraph.fading-in {
+      opacity: 0;
+      transition: none;
+    }
+
+    /* Visible mode: rewriting animation */
+    .paragraph.rewriting {
+      background: linear-gradient(90deg, transparent 0%, rgba(70, 130, 180, 0.06) 50%, transparent 100%);
+      background-size: 200% 100%;
+      animation: inkWash 2s ease-in-out infinite;
+      border-left: 2px solid rgba(70, 130, 180, 0.3);
+      padding-left: 1em;
+    }
+
+    .paragraph.rewrite-complete {
+      border-left: 2px solid rgba(70, 180, 130, 0.4);
+      padding-left: 1em;
+      transition: border-color 1s ease, padding-left 1s ease;
+    }
+
+    @keyframes inkWash {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    /* Rewrite horizon line */
+    .rewrite-horizon {
+      border: none;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(70, 130, 180, 0.3), transparent);
+      margin: 2em 0;
+      display: none;
+    }
+
+    .rewrite-horizon.visible {
+      display: block;
+    }
+
+    /* Calibration overlay */
+    #calibration-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(245, 240, 232, 0.95);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      font-family: Georgia, serif;
+      transition: opacity 0.5s ease;
+    }
+
+    #calibration-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #calibration-overlay h2 {
+      font-size: 1.4rem;
+      font-weight: normal;
+      margin-bottom: 1rem;
+      color: #1a1a1a;
+    }
+
+    #calibration-overlay p {
+      font-size: 1rem;
+      color: #666;
+      font-style: italic;
+    }
+
+    #calibration-overlay .progress-bar {
+      width: 200px;
+      height: 3px;
+      background: #ddd;
+      margin-top: 1.5rem;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    #calibration-overlay .progress-fill {
+      height: 100%;
+      background: #4682b4;
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+
+    /* Camera permission prompt */
+    #camera-prompt {
+      position: fixed;
+      inset: 0;
+      background: rgba(245, 240, 232, 0.97);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 101;
+      font-family: Georgia, serif;
+      transition: opacity 0.5s ease;
+    }
+
+    #camera-prompt.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #camera-prompt h2 {
+      font-size: 1.5rem;
+      font-weight: normal;
+      margin-bottom: 0.8rem;
+    }
+
+    #camera-prompt p {
+      font-size: 1rem;
+      color: #666;
+      max-width: 30em;
+      text-align: center;
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+
+    #camera-prompt button {
+      font-family: Georgia, serif;
+      font-size: 1rem;
+      padding: 0.7em 2em;
+      background: #2c2c2c;
+      color: #f5f0e8;
+      border: none;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+    }
+
+    #camera-prompt button:hover {
+      background: #4682b4;
+    }
+
+    /* Mode toggle */
+    #mode-toggle {
+      position: fixed;
+      top: 1rem;
+      left: 1rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.7rem;
+      padding: 0.4em 0.8em;
+      background: rgba(0,0,0,0.05);
+      border: 1px solid rgba(0,0,0,0.1);
+      color: #888;
+      cursor: pointer;
+      z-index: 50;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    #mode-toggle:hover {
+      background: rgba(0,0,0,0.1);
+    }
+
+    /* Status indicator */
+    #status {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.65rem;
+      color: #aaa;
+      z-index: 50;
+      text-align: right;
+    }
+
+    #status .dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+
+    #status .dot.active { background: #4caf50; }
+    #status .dot.inactive { background: #ccc; }
+    #status .dot.detecting { background: #ff9800; }
+
+    /* Debug Panel */
+    #debug-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 340px;
+      height: 100vh;
+      background: rgba(20, 20, 30, 0.92);
+      color: #ccc;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.7rem;
+      padding: 1rem;
+      overflow-y: auto;
+      z-index: 90;
+      transform: translateX(100%);
+      transition: transform 0.3s ease;
+      line-height: 1.5;
+    }
+
+    #debug-panel.open {
+      transform: translateX(0);
+    }
+
+    #debug-panel h3 {
+      font-size: 0.75rem;
+      color: #4682b4;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-top: 1rem;
+      margin-bottom: 0.4rem;
+      border-bottom: 1px solid rgba(70, 130, 180, 0.3);
+      padding-bottom: 0.2rem;
+    }
+
+    #debug-panel h3:first-child { margin-top: 0; }
+
+    #debug-webcam-preview {
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: #111;
+      margin-bottom: 0.5rem;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    #debug-webcam-preview video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    .debug-meter {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0.3rem 0;
+    }
+
+    .debug-meter label {
+      width: 80px;
+      text-align: right;
+      color: #888;
+    }
+
+    .debug-meter .bar {
+      flex: 1;
+      height: 8px;
+      background: #333;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .debug-meter .bar .fill {
+      height: 100%;
+      transition: width 0.3s ease, background 0.3s ease;
+      border-radius: 4px;
+    }
+
+    .debug-meter .value {
+      width: 35px;
+      text-align: right;
+      color: #aaa;
+    }
+
+    #debug-emotion {
+      font-size: 1rem;
+      margin: 0.5rem 0;
+      color: #fff;
+    }
+
+    #debug-emotion .trail {
+      font-size: 0.65rem;
+      color: #666;
+      margin-top: 0.2rem;
+    }
+
+    #debug-blend-shapes .blend-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      margin: 0.15rem 0;
+    }
+
+    #debug-blend-shapes .blend-bar label {
+      width: 120px;
+      text-align: right;
+      color: #666;
+      font-size: 0.6rem;
+    }
+
+    #debug-blend-shapes .blend-bar .bar {
+      flex: 1;
+      height: 5px;
+      background: #222;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    #debug-blend-shapes .blend-bar .bar .fill {
+      height: 100%;
+      background: #4682b4;
+      border-radius: 2px;
+      transition: width 0.15s ease;
+    }
+
+    #debug-rewrite-log {
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    #debug-rewrite-log .entry {
+      padding: 0.2rem 0;
+      border-bottom: 1px solid #222;
+      color: #888;
+    }
+
+    #debug-rewrite-log .entry .time { color: #555; }
+    #debug-rewrite-log .entry .action { color: #8bc34a; }
+
+    #debug-paragraph-map {
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+      margin-top: 0.3rem;
+    }
+
+    #debug-paragraph-map .p-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+      font-size: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+
+    #debug-paragraph-map .p-dot.frozen { background: #2196f3; }
+    #debug-paragraph-map .p-dot.current { background: #fff; color: #000; }
+    #debug-paragraph-map .p-dot.mutable { background: #ffc107; }
+    #debug-paragraph-map .p-dot.rewriting { background: #4caf50; animation: pulse 1s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    #debug-signals .signal-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.15rem 0;
+    }
+
+    #debug-signals .signal-row .label { color: #666; }
+    #debug-signals .signal-row .value { color: #aaa; }
+    #debug-signals .signal-row .value.good { color: #4caf50; }
+    #debug-signals .signal-row .value.warn { color: #ff9800; }
+    #debug-signals .signal-row .value.bad { color: #f44336; }
+  </style>
+</head>
+<body>
+  <video id="webcam" autoplay playsinline></video>
+
+  <!-- Camera permission prompt -->
+  <div id="camera-prompt">
+    <h2>這個故事正在看著你讀它。</h2>
+    <p>它透過相機讀取你的表情、注意力和投入程度，並即時改寫自己來留住你的目光。</p>
+    <button id="camera-start-btn">開始</button>
+  </div>
+
+  <!-- Calibration overlay -->
+  <div id="calibration-overlay" class="hidden">
+    <h2>自然地看著螢幕。</h2>
+    <p>校準中⋯⋯</p>
+    <div class="progress-bar"><div class="progress-fill" id="calibration-progress"></div></div>
+  </div>
+
+  <!-- Mode toggle -->
+  <button id="mode-toggle">invisible</button>
+
+  <!-- Status -->
+  <div id="status">
+    <span class="dot inactive" id="status-dot"></span>
+    <span id="status-text">waiting</span>
+  </div>
+
+  <!-- The Book -->
+  <main id="book">
+    <h1>遺留之物</h1>
+    <div class="subtitle">一個會讀你的故事</div>
+    <div id="book-inner"></div>
+  </main>
+
+  <!-- Debug Panel -->
+  <aside id="debug-panel">
+    <h3>Camera</h3>
+    <div id="debug-webcam-preview"></div>
+
+    <h3>Engagement</h3>
+    <div class="debug-meter">
+      <label>level</label>
+      <div class="bar"><div class="fill" id="debug-engagement-fill"></div></div>
+      <span class="value" id="debug-engagement-value">--</span>
+    </div>
+    <div id="debug-emotion">--</div>
+
+    <h3>Signals</h3>
+    <div id="debug-signals"></div>
+
+    <h3>Top Blend Shapes</h3>
+    <div id="debug-blend-shapes"></div>
+
+    <h3>Paragraph Map</h3>
+    <div id="debug-paragraph-map"></div>
+
+    <h3>Rewrite Log</h3>
+    <div id="debug-rewrite-log"></div>
+  </aside>
+
+  <script type="module" src="app-zh.js"></script>
+</body>
+</html>
